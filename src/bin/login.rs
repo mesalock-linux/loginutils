@@ -72,7 +72,7 @@ fn get_password() -> Result<String, LoginError> {
         old_termios = termios;    // libc::termios is a `Copy` type
         termios.c_iflag &= !(libc::IXON | libc::IXOFF | libc::IXANY);
         termios.c_lflag &= !(libc::ECHO | libc::ECHOE | libc::ECHOK | libc::ECHONL);
-        libc::tcsetattr(libc::STDIN_FILENO, libc::TCSANOW, &termios);
+        cvt(libc::tcsetattr(libc::STDIN_FILENO, libc::TCSANOW, &termios))?;
     }
 
     let mut password = String::new();
@@ -81,7 +81,7 @@ fn get_password() -> Result<String, LoginError> {
     io::stdout().flush()?;
 
     unsafe {
-        libc::tcsetattr(libc::STDIN_FILENO, libc::TCSANOW, &old_termios);
+        cvt(libc::tcsetattr(libc::STDIN_FILENO, libc::TCSANOW, &old_termios))?;
     }
 
     Ok(String::from(password.trim()))
@@ -190,7 +190,9 @@ static TIMEOUT: u32 = 10;
 extern fn alarm_handler(_signum: libc::c_int, _info: *mut libc::siginfo_t, _ptr: *mut libc::c_void) {
     unsafe {
         let termios_ptr = Box::into_raw(Box::new(INIT_TERMIOS.clone()));
-        libc::tcsetattr(libc::STDIN_FILENO, libc::TCSANOW, termios_ptr);
+        if libc::tcsetattr(libc::STDIN_FILENO, libc::TCSANOW, termios_ptr) == -1 {
+            process::exit(1)
+        }
         Box::from_raw(termios_ptr);
     }
     println!("\r\nLogin timed out after {} seconds\r\n", TIMEOUT);
@@ -202,7 +204,9 @@ extern fn alarm_handler(_signum: libc::c_int, _info: *mut libc::siginfo_t, _ptr:
 
 fn main() {
     unsafe {
-        libc::signal(libc::SIGALRM, alarm_handler as usize);
+        if libc::signal(libc::SIGALRM, alarm_handler as usize) == libc::SIG_ERR {
+            process::exit(1);
+        }
         libc::alarm(TIMEOUT);
     }
     enum State {
