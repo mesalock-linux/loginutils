@@ -1,5 +1,7 @@
 extern crate libc;
 extern crate pwhash;
+#[macro_use]
+extern crate lazy_static;
 
 use std::io;
 use std::io::Write;
@@ -172,7 +174,37 @@ fn delay(seconds: u32) {
     }
 }
 
+lazy_static! {
+    static ref INIT_TERMIOS: libc::termios = unsafe {
+        let mut t: libc::termios = mem::uninitialized();
+        if libc::tcgetattr(libc::STDIN_FILENO, &mut t) < 0 ||
+            libc::isatty(libc::STDIN_FILENO) == 0 {
+            panic!("Must be a terminal");
+        }
+        t
+    };
+}
+
+static TIMEOUT: u32 = 10;
+
+extern fn alarm_handler(_signum: libc::c_int, _info: *mut libc::siginfo_t, _ptr: *mut libc::c_void) {
+    unsafe {
+        let termios_ptr = Box::into_raw(Box::new(INIT_TERMIOS.clone()));
+        libc::tcsetattr(libc::STDIN_FILENO, libc::TCSANOW, termios_ptr);
+        Box::from_raw(termios_ptr);
+    }
+    println!("\r\nLogin timed out after {} seconds\r\n", TIMEOUT);
+    match io::stdout().flush() {
+        Ok(_) => process::exit(0),
+        Err(_) => process::exit(1)
+    }
+}
+
 fn main() {
+    unsafe {
+        libc::signal(libc::SIGALRM, alarm_handler as usize);
+        libc::alarm(TIMEOUT);
+    }
     enum State {
         U, // get username
         P, // get password

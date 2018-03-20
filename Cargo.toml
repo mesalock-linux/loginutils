@@ -6,3 +6,4 @@ authors = ["Mingshen Sun <mssun@mesalock-linux.org>"]
 [dependencies]
 libc = "0.2"
 pwhash = "0.1"
+lazy_static = "1.0"
