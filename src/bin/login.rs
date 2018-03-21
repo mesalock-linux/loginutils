@@ -222,6 +222,11 @@ fn main() {
     let tries = 3;
     let mut failcount = 0;
     loop {
+        unsafe {
+            if libc::tcflush(0, libc::TCIFLUSH) == -1 {
+                process::exit(1);
+            }
+        }
         state = match state {
             State::U => match get_username() {
                 Ok(ret) => {
