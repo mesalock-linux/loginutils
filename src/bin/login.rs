@@ -332,6 +332,8 @@ fn main() {
         let mut argv_vec: Vec<*const libc::c_char> = Vec::new();
         argv_vec.push((*passwd).pw_shell);
         argv_vec.push(ptr::null());
-        cvt(libc::execv((*passwd).pw_shell, argv_vec.as_mut_ptr())).expect("[-] execv error");
+        if cvt(libc::execv((*passwd).pw_shell, argv_vec.as_mut_ptr())).is_err() {
+            process::exit(1);
+        }
     }
 }
