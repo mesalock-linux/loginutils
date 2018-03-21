@@ -12,6 +12,7 @@ use std::ffi;
 use std::str;
 use std::mem;
 use std::process;
+use std::ptr;
 
 #[doc(hidden)]
 pub trait IsMinusOne {
@@ -87,36 +88,37 @@ fn get_password() -> Result<String, LoginError> {
     Ok(String::from(password.trim()))
 }
 
-fn check_password(username: &str, password: &str) -> Result<bool, LoginError> {
-    let username_cstring = CString::new(username)?;
-    let passwd;
-    unsafe {
-        let pw = libc::getpwnam(username_cstring.as_ptr());
-        if pw.is_null() {
-            return Err(From::from(io::Error::last_os_error()));
-        }
-        passwd = CStr::from_ptr((*pw).pw_passwd).to_string_lossy().to_owned();
-    }
 
-    match passwd.as_ref() {
+fn get_passwd(username: &str) -> Result<*mut libc::passwd, LoginError> {
+    let username_cstring = CString::new(username)?;
+    let pw = unsafe { libc::getpwnam(username_cstring.as_ptr()) };
+    if pw.is_null() {
+        return Err(From::from(io::Error::last_os_error()));
+    }
+    Ok(pw)
+}
+
+fn check_password(passwd: *mut libc::passwd, password: &str) -> Result<bool, LoginError> {
+    if passwd.is_null() {
+        return Err(LoginError::Pwd("Passwd is null".to_owned()));
+    }
+    let pw_passwd = unsafe { CStr::from_ptr((*passwd).pw_passwd).to_string_lossy().to_owned() };
+
+    match pw_passwd.as_ref() {
         "x" => {
             let hash;
 
             unsafe {
-                let pw = libc::getpwnam(username_cstring.as_ptr());
-                if pw.is_null() {
+                let spwd = libc::getspnam((*passwd).pw_name);
+                if spwd.is_null() {
                     return Err(From::from(io::Error::last_os_error()));
                 }
-                let sp = libc::getspnam((*pw).pw_name);
-                if sp.is_null() {
-                    return Err(From::from(io::Error::last_os_error()));
-                }
-                hash = CStr::from_ptr((*sp).sp_pwdp).to_str()?;
+                hash = CStr::from_ptr((*spwd).sp_pwdp).to_str()?;
             }
 
             Ok(pwhash::unix::verify(password, hash))
         },
-        passwd if passwd == password => Ok(true),
+        pw_passwd if pw_passwd == password => Ok(true),
         _ => Ok(false)
     }
 }
@@ -125,7 +127,8 @@ fn check_password(username: &str, password: &str) -> Result<bool, LoginError> {
 enum LoginError {
     Io(io::Error),
     Ffi(ffi::NulError),
-    Str(str::Utf8Error)
+    Str(str::Utf8Error),
+    Pwd(String),
 }
 
 impl From<io::Error> for LoginError {
@@ -153,6 +156,7 @@ impl fmt::Display for LoginError {
             LoginError::Io(ref err) => err.fmt(f),
             LoginError::Ffi(ref err) => err.fmt(f),
             LoginError::Str(ref err) => err.fmt(f),
+            LoginError::Pwd(ref err) => err.fmt(f),
         }
     }
 }
@@ -163,6 +167,7 @@ impl Error for LoginError {
             LoginError::Io(ref err) => err.description(),
             LoginError::Ffi(ref err) => err.description(),
             LoginError::Str(ref err) => err.description(),
+            LoginError::Pwd(ref err) => err,
         }
     }
 }
@@ -185,7 +190,7 @@ lazy_static! {
     };
 }
 
-static TIMEOUT: u32 = 10;
+static TIMEOUT: u32 = 60;
 
 extern fn alarm_handler(_signum: libc::c_int, _info: *mut libc::siginfo_t, _ptr: *mut libc::c_void) {
     unsafe {
@@ -221,6 +226,7 @@ fn main() {
     let mut state = State::U;
     let tries = 3;
     let mut failcount = 0;
+    let mut passwd: *mut libc::passwd = ptr::null_mut();
     loop {
         unsafe {
             if libc::tcflush(0, libc::TCIFLUSH) == -1 {
@@ -243,17 +249,29 @@ fn main() {
                     State::X
                 }
             },
-            State::P => match get_password() {
-                Ok(ret) => {
-                    password = ret;
-                    State::C
-                }
-                Err(err) => {
-                    eprintln!("[-] error: {}", err);
-                    State::X
+            State::P => {
+                match get_password() {
+                    Ok(ret) => {
+                        password = ret;
+                        State::C
+                    }
+                    Err(err) => {
+                        eprintln!("[-] error: {}", err);
+                        State::X
+                    }
+                };
+                match get_passwd(&username) {
+                    Ok(ret) => {
+                        passwd = ret;
+                        State::C
+                    }
+                    Err(err) => {
+                        eprintln!("[-] error: {}", err);
+                        State::X
+                    }
                 }
             },
-            State::C => match check_password(&username, &password) {
+            State::C => match check_password(passwd, &password) {
                 Ok(true) => {
                     println!("Login success");
                     break;
@@ -282,5 +300,32 @@ fn main() {
                 process::exit(1);
             }
         }
+    }
+    unsafe { libc::alarm(0); }
+    if passwd.is_null() {
+        eprintln!("[-] exit");
+        process::exit(1);
+    }
+
+    unsafe {
+        libc::fchown(0, (*passwd).pw_uid, (*passwd).pw_gid);
+        libc::fchmod(0, 0600);
+    }
+
+    // TODO: update utmp
+    // TODO: run login script
+    // TODO: change identity
+    // TODO: setup environment
+    // TODO: motd
+
+    unsafe {
+        if libc::signal(libc::SIGINT, libc::SIG_DFL) == libc::SIG_ERR {
+            process::exit(1);
+        };
+
+        let mut argv_vec: Vec<*const libc::c_char> = Vec::new();
+        argv_vec.push((*passwd).pw_shell);
+        argv_vec.push(ptr::null());
+        cvt(libc::execv((*passwd).pw_shell, argv_vec.as_mut_ptr())).expect("[-] execv error");
     }
 }
