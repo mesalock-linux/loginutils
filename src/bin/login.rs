@@ -100,6 +100,9 @@ fn check_password(passwd: *mut libc::passwd, password: &str) -> io::Result<bool>
     let pw_passwd = unsafe { CStr::from_ptr((*passwd).pw_passwd).to_string_lossy().to_owned() };
 
     match pw_passwd.as_ref() {
+        "!" | "*" => {
+            Ok(false)
+        }
         "x" => {
             let hash;
 
