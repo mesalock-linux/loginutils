@@ -332,7 +332,7 @@ fn main() {
         let mut argv_vec: Vec<*const libc::c_char> = Vec::new();
         argv_vec.push((*passwd).pw_shell);
         argv_vec.push(ptr::null());
-        if cvt(libc::execv((*passwd).pw_shell, argv_vec.as_mut_ptr())).is_err() {
+        if libc::execv((*passwd).pw_shell, argv_vec.as_mut_ptr()) == -1 {
             libc::exit(EXIT_FAILURE);
         }
     }
