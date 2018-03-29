@@ -246,8 +246,6 @@ fn main() {
     unsafe {
         libc::alarm(0);
 
-        libc::fchown(0, (*passwd).pw_uid, (*passwd).pw_gid);
-        libc::fchmod(0, 0600);
         if libc::initgroups((*passwd).pw_name, (*passwd).pw_gid) == -1 ||
            libc::setgid((*passwd).pw_gid) == -1 ||
            libc::setuid((*passwd).pw_uid) == -1 {
