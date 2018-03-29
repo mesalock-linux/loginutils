@@ -250,16 +250,12 @@ fn main() {
         if libc::chdir((*passwd).pw_dir) == -1 {
             println!("bad $HOME: {}", CStr::from_ptr((*passwd).pw_dir).to_string_lossy());
         }
-    }
 
+        libc::setenv(CString::new("USER").unwrap().as_ptr(), (*passwd).pw_name, 1);
+        libc::setenv(CString::new("LOGNAME").unwrap().as_ptr(), (*passwd).pw_name, 1);
+        libc::setenv(CString::new("HOME").unwrap().as_ptr(), (*passwd).pw_dir, 1);
+        libc::setenv(CString::new("SHELL").unwrap().as_ptr(), (*passwd).pw_shell, 1);
 
-    // TODO: update utmp
-    // TODO: run login script
-    // TODO: change identity
-    // TODO: setup environment
-    // TODO: motd
-
-    unsafe {
         if libc::signal(libc::SIGINT, libc::SIG_DFL) == libc::SIG_ERR {
             libc::exit(EXIT_FAILURE);
         };
