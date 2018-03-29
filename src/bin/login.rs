@@ -310,10 +310,9 @@ fn main() {
     unsafe {
         libc::fchown(0, (*passwd).pw_uid, (*passwd).pw_gid);
         libc::fchmod(0, 0600);
-        if cvt(libc::setgid((*passwd).pw_gid)).is_err() {
-            process::exit(1);
-        }
-        if cvt(libc::setuid((*passwd).pw_uid)).is_err() {
+        if libc::initgroups((*passwd).pw_name, (*passwd).pw_gid) != 0 ||
+           libc::setgid((*passwd).pw_gid) != 0 ||
+           libc::setuid((*passwd).pw_uid) != 0 {
             process::exit(1);
         }
     }
