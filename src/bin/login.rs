@@ -196,14 +196,14 @@ extern fn alarm_handler(_signum: libc::c_int, _info: *mut libc::siginfo_t, _ptr:
     unsafe {
         let termios_ptr = Box::into_raw(Box::new(INIT_TERMIOS.clone()));
         if libc::tcsetattr(libc::STDIN_FILENO, libc::TCSANOW, termios_ptr) == -1 {
-            process::exit(1)
+            libc::_exit(1)
         }
         Box::from_raw(termios_ptr);
     }
     println!("\r\nLogin timed out after {} seconds\r\n", TIMEOUT);
     match io::stdout().flush() {
-        Ok(_) => process::exit(0),
-        Err(_) => process::exit(1)
+        Ok(_) => unsafe { libc::_exit(0) },
+        Err(_) => unsafe { libc::_exit(1) }
     }
 }
 
