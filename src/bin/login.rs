@@ -260,10 +260,7 @@ fn main() {
             libc::exit(EXIT_FAILURE);
         };
 
-        let mut argv_vec: Vec<*const libc::c_char> = Vec::new();
-        argv_vec.push((*passwd).pw_shell);
-        argv_vec.push(ptr::null());
-        if libc::execv((*passwd).pw_shell, argv_vec.as_mut_ptr()) == -1 {
+        if libc::execl((*passwd).pw_shell, (*passwd).pw_shell, ptr::null() as *const libc::c_char) == -1 {
             libc::exit(EXIT_FAILURE);
         }
     }
