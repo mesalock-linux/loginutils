@@ -113,10 +113,10 @@ fn check_password(passwd: *mut libc::passwd, password: &str) -> Result<bool, Log
                 if spwd.is_null() {
                     return Err(From::from(io::Error::last_os_error()));
                 }
-                hash = CStr::from_ptr((*spwd).sp_pwdp).to_str()?;
+                hash = CStr::from_ptr((*spwd).sp_pwdp).to_string_lossy().to_owned();
             }
 
-            Ok(pwhash::unix::verify(password, hash))
+            Ok(pwhash::unix::verify(password, &hash))
         },
         pw_passwd if pw_passwd == password => Ok(true),
         _ => Ok(false)
