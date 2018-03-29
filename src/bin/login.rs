@@ -100,9 +100,11 @@ fn check_password(passwd: *mut libc::passwd, password: &str) -> io::Result<bool>
     let pw_passwd = unsafe { CStr::from_ptr((*passwd).pw_passwd).to_string_lossy().to_owned() };
 
     match pw_passwd.as_ref() {
+        // account is locked or no password
         "!" | "*" => {
             Ok(false)
         }
+        // shadow password
         "x" => {
             let hash;
 
@@ -115,8 +117,10 @@ fn check_password(passwd: *mut libc::passwd, password: &str) -> io::Result<bool>
             }
 
             Ok(pwhash::unix::verify(password, &hash))
-        },
+        }
+        // plain correct password
         pw_passwd if pw_passwd == password => Ok(true),
+        // incorrect password
         _ => Ok(false)
     }
 }
