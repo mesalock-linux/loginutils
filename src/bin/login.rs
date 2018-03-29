@@ -11,7 +11,6 @@ use std::error::Error;
 use std::ffi;
 use std::str;
 use std::mem;
-use std::process;
 use std::ptr;
 use libc::{EXIT_SUCCESS, EXIT_FAILURE};
 
@@ -211,7 +210,7 @@ extern fn alarm_handler(_signum: libc::c_int, _info: *mut libc::siginfo_t, _ptr:
 fn main() {
     unsafe {
         if libc::signal(libc::SIGALRM, alarm_handler as usize) == libc::SIG_ERR {
-            process::exit(EXIT_FAILURE);
+            libc::exit(EXIT_FAILURE);
         }
         libc::alarm(TIMEOUT);
     }
@@ -231,7 +230,7 @@ fn main() {
     loop {
         unsafe {
             if libc::tcflush(0, libc::TCIFLUSH) == -1 {
-                process::exit(EXIT_FAILURE);
+                libc::exit(EXIT_FAILURE);
             }
         }
         state = match state {
@@ -298,23 +297,24 @@ fn main() {
             }
             State::X => {
                 eprintln!("[-] exit");
-                process::exit(EXIT_FAILURE);
+                unsafe { libc::exit(EXIT_FAILURE) };
             }
         }
     }
-    unsafe { libc::alarm(0); }
-    if passwd.is_null() {
-        eprintln!("[-] exit");
-        process::exit(EXIT_FAILURE);
-    }
-
     unsafe {
+        libc::alarm(0);
+
+        if passwd.is_null() {
+            eprintln!("[-] exit");
+            libc::exit(EXIT_FAILURE);
+        }
+
         libc::fchown(0, (*passwd).pw_uid, (*passwd).pw_gid);
         libc::fchmod(0, 0600);
-        if libc::initgroups((*passwd).pw_name, (*passwd).pw_gid) != 0 ||
-           libc::setgid((*passwd).pw_gid) != 0 ||
-           libc::setuid((*passwd).pw_uid) != 0 {
-            process::exit(EXIT_FAILURE);
+        if libc::initgroups((*passwd).pw_name, (*passwd).pw_gid) == -1 ||
+           libc::setgid((*passwd).pw_gid) == -1 ||
+           libc::setuid((*passwd).pw_uid) == -1 {
+            libc::exit(EXIT_FAILURE);
         }
     }
 
@@ -326,14 +326,14 @@ fn main() {
 
     unsafe {
         if libc::signal(libc::SIGINT, libc::SIG_DFL) == libc::SIG_ERR {
-            process::exit(EXIT_FAILURE);
+            libc::exit(EXIT_FAILURE);
         };
 
         let mut argv_vec: Vec<*const libc::c_char> = Vec::new();
         argv_vec.push((*passwd).pw_shell);
         argv_vec.push(ptr::null());
         if cvt(libc::execv((*passwd).pw_shell, argv_vec.as_mut_ptr())).is_err() {
-            process::exit(EXIT_FAILURE);
+            libc::exit(EXIT_FAILURE);
         }
     }
 }
