@@ -246,7 +246,12 @@ fn main() {
            libc::setuid((*passwd).pw_uid) == -1 {
             libc::exit(EXIT_FAILURE);
         }
+
+        if libc::chdir((*passwd).pw_dir) == -1 {
+            println!("bad $HOME: {}", CStr::from_ptr((*passwd).pw_dir).to_string_lossy());
+        }
     }
+
 
     // TODO: update utmp
     // TODO: run login script
