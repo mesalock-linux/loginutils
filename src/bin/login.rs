@@ -13,6 +13,7 @@ use std::str;
 use std::mem;
 use std::process;
 use std::ptr;
+use libc::{EXIT_SUCCESS, EXIT_FAILURE};
 
 #[doc(hidden)]
 pub trait IsMinusOne {
@@ -196,21 +197,21 @@ extern fn alarm_handler(_signum: libc::c_int, _info: *mut libc::siginfo_t, _ptr:
     unsafe {
         let termios_ptr = Box::into_raw(Box::new(INIT_TERMIOS.clone()));
         if libc::tcsetattr(libc::STDIN_FILENO, libc::TCSANOW, termios_ptr) == -1 {
-            libc::_exit(1)
+            libc::_exit(EXIT_FAILURE)
         }
         Box::from_raw(termios_ptr);
     }
     println!("\r\nLogin timed out after {} seconds\r\n", TIMEOUT);
     match io::stdout().flush() {
-        Ok(_) => unsafe { libc::_exit(0) },
-        Err(_) => unsafe { libc::_exit(1) }
+        Ok(_) => unsafe { libc::_exit(EXIT_SUCCESS) },
+        Err(_) => unsafe { libc::_exit(EXIT_FAILURE) }
     }
 }
 
 fn main() {
     unsafe {
         if libc::signal(libc::SIGALRM, alarm_handler as usize) == libc::SIG_ERR {
-            process::exit(1);
+            process::exit(EXIT_FAILURE);
         }
         libc::alarm(TIMEOUT);
     }
@@ -230,7 +231,7 @@ fn main() {
     loop {
         unsafe {
             if libc::tcflush(0, libc::TCIFLUSH) == -1 {
-                process::exit(1);
+                process::exit(EXIT_FAILURE);
             }
         }
         state = match state {
@@ -297,14 +298,14 @@ fn main() {
             }
             State::X => {
                 eprintln!("[-] exit");
-                process::exit(1);
+                process::exit(EXIT_FAILURE);
             }
         }
     }
     unsafe { libc::alarm(0); }
     if passwd.is_null() {
         eprintln!("[-] exit");
-        process::exit(1);
+        process::exit(EXIT_FAILURE);
     }
 
     unsafe {
@@ -313,7 +314,7 @@ fn main() {
         if libc::initgroups((*passwd).pw_name, (*passwd).pw_gid) != 0 ||
            libc::setgid((*passwd).pw_gid) != 0 ||
            libc::setuid((*passwd).pw_uid) != 0 {
-            process::exit(1);
+            process::exit(EXIT_FAILURE);
         }
     }
 
@@ -325,14 +326,14 @@ fn main() {
 
     unsafe {
         if libc::signal(libc::SIGINT, libc::SIG_DFL) == libc::SIG_ERR {
-            process::exit(1);
+            process::exit(EXIT_FAILURE);
         };
 
         let mut argv_vec: Vec<*const libc::c_char> = Vec::new();
         argv_vec.push((*passwd).pw_shell);
         argv_vec.push(ptr::null());
         if cvt(libc::execv((*passwd).pw_shell, argv_vec.as_mut_ptr())).is_err() {
-            process::exit(1);
+            process::exit(EXIT_FAILURE);
         }
     }
 }
