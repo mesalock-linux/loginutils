@@ -4,11 +4,8 @@ extern crate pwhash;
 extern crate lazy_static;
 
 use std::io;
-use std::io::Write;
+use std::io::{Write, Error, ErrorKind};
 use std::ffi::{CStr, CString};
-use std::fmt;
-use std::error::Error;
-use std::ffi;
 use std::str;
 use std::mem;
 use std::ptr;
@@ -37,7 +34,7 @@ pub fn cvt<T: IsMinusOne>(t: T) -> io::Result<T> {
     }
 }
 
-fn get_username() -> Result<String, LoginError> {
+fn get_username() -> io::Result<String> {
     let nodename;
     unsafe {
         let mut utsname: libc::utsname = mem::uninitialized();
@@ -57,11 +54,11 @@ fn get_username() -> Result<String, LoginError> {
         Ok(_n) => {
             Ok(String::from(username.trim()))
         }
-        Err(err) => Err(LoginError::Io(err)),
+        Err(err) => Err(err),
     }
 }
 
-fn get_password() -> Result<String, LoginError> {
+fn get_password() -> io::Result<String> {
     print!("Password: ");
     io::stdout().flush()?;
 
@@ -89,19 +86,17 @@ fn get_password() -> Result<String, LoginError> {
 }
 
 
-fn get_passwd(username: &str) -> Result<*mut libc::passwd, LoginError> {
-    let username_cstring = CString::new(username)?;
+fn get_passwd(username: &str) -> io::Result<*mut libc::passwd> {
+    let username_cstring = CString::new(username).unwrap();
     let pw = unsafe { libc::getpwnam(username_cstring.as_ptr()) };
     if pw.is_null() {
-        return Err(From::from(io::Error::last_os_error()));
+        Err(Error::new(ErrorKind::Other, "Matching entry is not found or an error occurs"))
+    } else {
+        Ok(pw)
     }
-    Ok(pw)
 }
 
-fn check_password(passwd: *mut libc::passwd, password: &str) -> Result<bool, LoginError> {
-    if passwd.is_null() {
-        return Err(LoginError::Pwd("Passwd is null".to_owned()));
-    }
+fn check_password(passwd: *mut libc::passwd, password: &str) -> io::Result<bool> {
     let pw_passwd = unsafe { CStr::from_ptr((*passwd).pw_passwd).to_string_lossy().to_owned() };
 
     match pw_passwd.as_ref() {
@@ -120,55 +115,6 @@ fn check_password(passwd: *mut libc::passwd, password: &str) -> Result<bool, Log
         },
         pw_passwd if pw_passwd == password => Ok(true),
         _ => Ok(false)
-    }
-}
-
-#[derive(Debug)]
-enum LoginError {
-    Io(io::Error),
-    Ffi(ffi::NulError),
-    Str(str::Utf8Error),
-    Pwd(String),
-}
-
-impl From<io::Error> for LoginError {
-    fn from(error: io::Error) -> LoginError {
-        LoginError::Io(error)
-    }
-}
-
-
-impl From<ffi::NulError> for LoginError {
-    fn from(error: ffi::NulError) -> LoginError {
-        LoginError::Ffi(error)
-    }
-}
-
-impl From<str::Utf8Error> for LoginError {
-    fn from(error: str::Utf8Error) -> LoginError {
-        LoginError::Str(error)
-    }
-}
-
-impl fmt::Display for LoginError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match *self {
-            LoginError::Io(ref err) => err.fmt(f),
-            LoginError::Ffi(ref err) => err.fmt(f),
-            LoginError::Str(ref err) => err.fmt(f),
-            LoginError::Pwd(ref err) => err.fmt(f),
-        }
-    }
-}
-
-impl Error for LoginError {
-    fn description(&self) -> &str {
-        match *self {
-            LoginError::Io(ref err) => err.description(),
-            LoginError::Ffi(ref err) => err.description(),
-            LoginError::Str(ref err) => err.description(),
-            LoginError::Pwd(ref err) => err,
-        }
     }
 }
 
@@ -244,31 +190,25 @@ fn main() {
                         State::F
                     }
                 }
-                Err(err) => {
-                    eprintln!("[-] error: {}", err);
-                    State::X
+                Err(_) => {
+                    State::F
                 }
             },
-            State::P => {
-                match get_password() {
-                    Ok(ret) => {
-                        password = ret;
-                        State::C
+            State::P => match get_password() {
+                Ok(ret) => {
+                    password = ret;
+                    match get_passwd(&username) {
+                        Ok(ret) => {
+                            passwd = ret;
+                            State::C
+                        }
+                        Err(_) => {
+                            State::F
+                        }
                     }
-                    Err(err) => {
-                        eprintln!("[-] error: {}", err);
-                        State::X
-                    }
-                };
-                match get_passwd(&username) {
-                    Ok(ret) => {
-                        passwd = ret;
-                        State::C
-                    }
-                    Err(err) => {
-                        eprintln!("[-] error: {}", err);
-                        State::X
-                    }
+                }
+                Err(_) => {
+                    State::F
                 }
             },
             State::C => match check_password(passwd, &password) {
@@ -276,12 +216,8 @@ fn main() {
                     println!("Login success");
                     break;
                 }
-                Ok(false) => {
+                Ok(false) | Err(_) => {
                     State::F
-                }
-                Err(err) => {
-                    eprintln!("[-] error: {}", err);
-                    State::X
                 }
             },
             State::F => {
@@ -291,23 +227,17 @@ fn main() {
                 if failcount < tries {
                     State::U
                 } else {
-                    eprintln!("[-] error: exceed three tries");
+                    eprintln!("max retries(3)");
                     State::X
                 }
             }
             State::X => {
-                eprintln!("[-] exit");
                 unsafe { libc::exit(EXIT_FAILURE) };
             }
         }
     }
     unsafe {
         libc::alarm(0);
-
-        if passwd.is_null() {
-            eprintln!("[-] exit");
-            libc::exit(EXIT_FAILURE);
-        }
 
         libc::fchown(0, (*passwd).pw_uid, (*passwd).pw_gid);
         libc::fchmod(0, 0600);
