@@ -13,7 +13,11 @@ use libc::{EXIT_FAILURE, EXIT_SUCCESS};
 use std::path::Path;
 use std::fs::File;
 
-static TIMEOUT: u32 = 60;
+const TIMEOUT: u32 = 60;
+const ENV_USER: &'static [u8] = b"USER\0";
+const ENV_LOGNAME: &'static [u8] = b"LOGNAME\0";
+const ENV_HOME: &'static [u8] = b"HOME\0";
+const ENV_SHELL: &'static [u8] = b"SHELL\0";
 
 #[doc(hidden)]
 pub trait IsMinusOne {
@@ -285,18 +289,10 @@ fn main() {
             );
         }
 
-        libc::setenv(CString::new("USER").unwrap().as_ptr(), (*passwd).pw_name, 1);
-        libc::setenv(
-            CString::new("LOGNAME").unwrap().as_ptr(),
-            (*passwd).pw_name,
-            1,
-        );
-        libc::setenv(CString::new("HOME").unwrap().as_ptr(), (*passwd).pw_dir, 1);
-        libc::setenv(
-            CString::new("SHELL").unwrap().as_ptr(),
-            (*passwd).pw_shell,
-            1,
-        );
+        libc::setenv(ENV_USER.as_ptr() as *const libc::c_char, (*passwd).pw_name, 1);
+        libc::setenv(ENV_LOGNAME.as_ptr() as *const libc::c_char, (*passwd).pw_name, 1);
+        libc::setenv(ENV_HOME.as_ptr() as *const libc::c_char, (*passwd).pw_dir, 1);
+        libc::setenv(ENV_SHELL.as_ptr() as *const libc::c_char, (*passwd).pw_shell, 1);
 
         if libc::signal(libc::SIGINT, libc::SIG_DFL) == libc::SIG_ERR {
             libc::exit(EXIT_FAILURE);
