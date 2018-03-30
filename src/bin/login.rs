@@ -98,12 +98,15 @@ fn get_password() -> io::Result<String> {
 }
 
 fn get_passwd(username: &str) -> io::Result<*mut libc::passwd> {
-    let username_cstring = CString::new(username).unwrap();
+    let username_cstring = match CString::new(username) {
+        Ok(name) => name,
+        Err(_) => return Err(Error::new(ErrorKind::Other, "username is invalid")),
+    };
     let pw = unsafe { libc::getpwnam(username_cstring.as_ptr()) };
     if pw.is_null() {
         Err(Error::new(
             ErrorKind::Other,
-            "Matching entry is not found or an error occurs",
+            "matching entry is not found or an error occurs",
         ))
     } else {
         Ok(pw)
@@ -289,10 +292,26 @@ fn main() {
             );
         }
 
-        libc::setenv(ENV_USER.as_ptr() as *const libc::c_char, (*passwd).pw_name, 1);
-        libc::setenv(ENV_LOGNAME.as_ptr() as *const libc::c_char, (*passwd).pw_name, 1);
-        libc::setenv(ENV_HOME.as_ptr() as *const libc::c_char, (*passwd).pw_dir, 1);
-        libc::setenv(ENV_SHELL.as_ptr() as *const libc::c_char, (*passwd).pw_shell, 1);
+        libc::setenv(
+            ENV_USER.as_ptr() as *const libc::c_char,
+            (*passwd).pw_name,
+            1,
+        );
+        libc::setenv(
+            ENV_LOGNAME.as_ptr() as *const libc::c_char,
+            (*passwd).pw_name,
+            1,
+        );
+        libc::setenv(
+            ENV_HOME.as_ptr() as *const libc::c_char,
+            (*passwd).pw_dir,
+            1,
+        );
+        libc::setenv(
+            ENV_SHELL.as_ptr() as *const libc::c_char,
+            (*passwd).pw_shell,
+            1,
+        );
 
         if libc::signal(libc::SIGINT, libc::SIG_DFL) == libc::SIG_ERR {
             libc::exit(EXIT_FAILURE);
