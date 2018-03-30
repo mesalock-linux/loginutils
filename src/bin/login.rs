@@ -1,15 +1,15 @@
-extern crate libc;
-extern crate pwhash;
 #[macro_use]
 extern crate lazy_static;
+extern crate libc;
+extern crate pwhash;
 
 use std::io;
-use std::io::{Read, Write, Error, ErrorKind};
+use std::io::{Error, ErrorKind, Read, Write};
 use std::ffi::{CStr, CString};
 use std::str;
 use std::mem;
 use std::ptr;
-use libc::{EXIT_SUCCESS, EXIT_FAILURE};
+use libc::{EXIT_FAILURE, EXIT_SUCCESS};
 use std::path::Path;
 use std::fs::File;
 
@@ -43,7 +43,9 @@ fn get_username() -> io::Result<String> {
     unsafe {
         let mut utsname: libc::utsname = mem::uninitialized();
         cvt(libc::uname(&mut utsname))?;
-        nodename = CStr::from_ptr(utsname.nodename.as_ptr()).to_string_lossy().into_owned();
+        nodename = CStr::from_ptr(utsname.nodename.as_ptr())
+            .to_string_lossy()
+            .into_owned();
     }
     if nodename.is_empty() {
         print!("?");
@@ -55,9 +57,7 @@ fn get_username() -> io::Result<String> {
 
     let mut username = String::new();
     match io::stdin().read_line(&mut username) {
-        Ok(_n) => {
-            Ok(String::from(username.trim()))
-        }
+        Ok(_n) => Ok(String::from(username.trim())),
         Err(err) => Err(err),
     }
 }
@@ -71,7 +71,7 @@ fn get_password() -> io::Result<String> {
     unsafe {
         let mut termios: libc::termios = mem::uninitialized();
         cvt(libc::tcgetattr(libc::STDIN_FILENO, &mut termios))?;
-        old_termios = termios;    // libc::termios is a `Copy` type
+        old_termios = termios; // libc::termios is a `Copy` type
         termios.c_iflag &= !(libc::IXON | libc::IXOFF | libc::IXANY);
         termios.c_lflag &= !(libc::ECHO | libc::ECHOE | libc::ECHOK | libc::ECHONL);
         cvt(libc::tcsetattr(libc::STDIN_FILENO, libc::TCSANOW, &termios))?;
@@ -83,31 +83,39 @@ fn get_password() -> io::Result<String> {
     io::stdout().flush()?;
 
     unsafe {
-        cvt(libc::tcsetattr(libc::STDIN_FILENO, libc::TCSANOW, &old_termios))?;
+        cvt(libc::tcsetattr(
+            libc::STDIN_FILENO,
+            libc::TCSANOW,
+            &old_termios,
+        ))?;
     }
 
     Ok(String::from(password.trim()))
 }
 
-
 fn get_passwd(username: &str) -> io::Result<*mut libc::passwd> {
     let username_cstring = CString::new(username).unwrap();
     let pw = unsafe { libc::getpwnam(username_cstring.as_ptr()) };
     if pw.is_null() {
-        Err(Error::new(ErrorKind::Other, "Matching entry is not found or an error occurs"))
+        Err(Error::new(
+            ErrorKind::Other,
+            "Matching entry is not found or an error occurs",
+        ))
     } else {
         Ok(pw)
     }
 }
 
 fn check_password(passwd: *mut libc::passwd, password: &str) -> io::Result<bool> {
-    let pw_passwd = unsafe { CStr::from_ptr((*passwd).pw_passwd).to_string_lossy().to_owned() };
+    let pw_passwd = unsafe {
+        CStr::from_ptr((*passwd).pw_passwd)
+            .to_string_lossy()
+            .to_owned()
+    };
 
     match pw_passwd.as_ref() {
         // account is locked or no password
-        "!" | "*" => {
-            Ok(false)
-        }
+        "!" | "*" => Ok(false),
         // shadow password
         "x" => {
             let hash;
@@ -125,7 +133,7 @@ fn check_password(passwd: *mut libc::passwd, password: &str) -> io::Result<bool>
         // plain correct password
         pw_passwd if pw_passwd == password => Ok(true),
         // incorrect password
-        _ => Ok(false)
+        _ => Ok(false),
     }
 }
 
@@ -148,7 +156,11 @@ lazy_static! {
     };
 }
 
-extern fn alarm_handler(_signum: libc::c_int, _info: *mut libc::siginfo_t, _ptr: *mut libc::c_void) {
+extern "C" fn alarm_handler(
+    _signum: libc::c_int,
+    _info: *mut libc::siginfo_t,
+    _ptr: *mut libc::c_void,
+) {
     // restore original termios settings
     unsafe {
         let termios_ptr = Box::into_raw(Box::new(INIT_TERMIOS.clone()));
@@ -160,7 +172,7 @@ extern fn alarm_handler(_signum: libc::c_int, _info: *mut libc::siginfo_t, _ptr:
     println!("\r\nLogin timed out after {} seconds\r\n", TIMEOUT);
     match io::stdout().flush() {
         Ok(_) => unsafe { libc::_exit(EXIT_SUCCESS) },
-        Err(_) => unsafe { libc::_exit(EXIT_FAILURE) }
+        Err(_) => unsafe { libc::_exit(EXIT_FAILURE) },
     }
 }
 
@@ -201,9 +213,7 @@ fn main() {
                         State::F
                     }
                 }
-                Err(_) => {
-                    State::F
-                }
+                Err(_) => State::F,
             },
             State::P => match get_password() {
                 Ok(ret) => {
@@ -213,23 +223,17 @@ fn main() {
                             passwd = ret;
                             State::C
                         }
-                        Err(_) => {
-                            State::F
-                        }
+                        Err(_) => State::F,
                     }
                 }
-                Err(_) => {
-                    State::F
-                }
+                Err(_) => State::F,
             },
             State::C => match check_password(passwd, &password) {
                 Ok(true) => {
                     println!("Login success");
                     break;
                 }
-                Ok(false) | Err(_) => {
-                    State::F
-                }
+                Ok(false) | Err(_) => State::F,
             },
             State::F => {
                 delay(3);
@@ -251,40 +255,59 @@ fn main() {
         libc::alarm(0);
 
         let path = "/etc/nologin";
-        if (*passwd).pw_uid != 0 && libc::access(CString::new(path).unwrap().as_ptr(), libc::R_OK) == 0 {
+        if (*passwd).pw_uid != 0
+            && libc::access(CString::new(path).unwrap().as_ptr(), libc::R_OK) == 0
+        {
             let mut file = match File::open(&Path::new(path)) {
                 Ok(file) => file,
-                Err(_) => libc::exit(EXIT_FAILURE)
+                Err(_) => libc::exit(EXIT_FAILURE),
             };
             let mut message = String::new();
             match file.read_to_string(&mut message) {
                 Ok(0) => println!("nologin"),
                 Ok(_) => println!("{}", message),
-                Err(_) => libc::exit(EXIT_FAILURE)
+                Err(_) => libc::exit(EXIT_FAILURE),
             }
             libc::exit(EXIT_FAILURE)
         }
 
-        if libc::initgroups((*passwd).pw_name, (*passwd).pw_gid) == -1 ||
-           libc::setgid((*passwd).pw_gid) == -1 ||
-           libc::setuid((*passwd).pw_uid) == -1 {
+        if libc::initgroups((*passwd).pw_name, (*passwd).pw_gid) == -1
+            || libc::setgid((*passwd).pw_gid) == -1
+            || libc::setuid((*passwd).pw_uid) == -1
+        {
             libc::exit(EXIT_FAILURE);
         }
 
         if libc::chdir((*passwd).pw_dir) == -1 {
-            println!("bad $HOME: {}", CStr::from_ptr((*passwd).pw_dir).to_string_lossy());
+            println!(
+                "bad $HOME: {}",
+                CStr::from_ptr((*passwd).pw_dir).to_string_lossy()
+            );
         }
 
         libc::setenv(CString::new("USER").unwrap().as_ptr(), (*passwd).pw_name, 1);
-        libc::setenv(CString::new("LOGNAME").unwrap().as_ptr(), (*passwd).pw_name, 1);
+        libc::setenv(
+            CString::new("LOGNAME").unwrap().as_ptr(),
+            (*passwd).pw_name,
+            1,
+        );
         libc::setenv(CString::new("HOME").unwrap().as_ptr(), (*passwd).pw_dir, 1);
-        libc::setenv(CString::new("SHELL").unwrap().as_ptr(), (*passwd).pw_shell, 1);
+        libc::setenv(
+            CString::new("SHELL").unwrap().as_ptr(),
+            (*passwd).pw_shell,
+            1,
+        );
 
         if libc::signal(libc::SIGINT, libc::SIG_DFL) == libc::SIG_ERR {
             libc::exit(EXIT_FAILURE);
         };
 
-        if libc::execl((*passwd).pw_shell, (*passwd).pw_shell, ptr::null() as *const libc::c_char) == -1 {
+        if libc::execl(
+            (*passwd).pw_shell,
+            (*passwd).pw_shell,
+            ptr::null() as *const libc::c_char,
+        ) == -1
+        {
             libc::exit(EXIT_FAILURE);
         }
     }
