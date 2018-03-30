@@ -4,12 +4,16 @@ extern crate pwhash;
 extern crate lazy_static;
 
 use std::io;
-use std::io::{Write, Error, ErrorKind};
+use std::io::{Read, Write, Error, ErrorKind};
 use std::ffi::{CStr, CString};
 use std::str;
 use std::mem;
 use std::ptr;
 use libc::{EXIT_SUCCESS, EXIT_FAILURE};
+use std::path::Path;
+use std::fs::File;
+
+static TIMEOUT: u32 = 60;
 
 #[doc(hidden)]
 pub trait IsMinusOne {
@@ -133,6 +137,7 @@ fn delay(seconds: u32) {
 }
 
 lazy_static! {
+    // save original termios settings
     static ref INIT_TERMIOS: libc::termios = unsafe {
         let mut t: libc::termios = mem::uninitialized();
         if libc::tcgetattr(libc::STDIN_FILENO, &mut t) < 0 ||
@@ -143,9 +148,8 @@ lazy_static! {
     };
 }
 
-static TIMEOUT: u32 = 60;
-
 extern fn alarm_handler(_signum: libc::c_int, _info: *mut libc::siginfo_t, _ptr: *mut libc::c_void) {
+    // restore original termios settings
     unsafe {
         let termios_ptr = Box::into_raw(Box::new(INIT_TERMIOS.clone()));
         if libc::tcsetattr(libc::STDIN_FILENO, libc::TCSANOW, termios_ptr) == -1 {
@@ -245,6 +249,21 @@ fn main() {
     }
     unsafe {
         libc::alarm(0);
+
+        let path = "/etc/nologin";
+        if (*passwd).pw_uid != 0 && libc::access(CString::new(path).unwrap().as_ptr(), libc::R_OK) == 0 {
+            let mut file = match File::open(&Path::new(path)) {
+                Ok(file) => file,
+                Err(_) => libc::exit(EXIT_FAILURE)
+            };
+            let mut message = String::new();
+            match file.read_to_string(&mut message) {
+                Ok(0) => println!("nologin"),
+                Ok(_) => println!("{}", message),
+                Err(_) => libc::exit(EXIT_FAILURE)
+            }
+            libc::exit(EXIT_FAILURE)
+        }
 
         if libc::initgroups((*passwd).pw_name, (*passwd).pw_gid) == -1 ||
            libc::setgid((*passwd).pw_gid) == -1 ||
