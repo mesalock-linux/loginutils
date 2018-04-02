@@ -1,7 +1,9 @@
+extern crate isatty;
 #[macro_use]
 extern crate lazy_static;
 extern crate libc;
 extern crate pwhash;
+extern crate termios;
 
 use std::io;
 use std::io::{Error, ErrorKind, Read, Write};
@@ -67,32 +69,23 @@ fn get_username() -> io::Result<String> {
 }
 
 fn get_password() -> io::Result<String> {
+    use termios::*;
     print!("Password: ");
     io::stdout().flush()?;
 
-    let old_termios;
+    // let old_termios;
+    let mut termios = Termios::from_fd(libc::STDIN_FILENO)?;
+    let old_termios = termios;
 
-    unsafe {
-        let mut termios: libc::termios = mem::uninitialized();
-        cvt(libc::tcgetattr(libc::STDIN_FILENO, &mut termios))?;
-        old_termios = termios; // libc::termios is a `Copy` type
-        termios.c_iflag &= !(libc::IXON | libc::IXOFF | libc::IXANY);
-        termios.c_lflag &= !(libc::ECHO | libc::ECHOE | libc::ECHOK | libc::ECHONL);
-        cvt(libc::tcsetattr(libc::STDIN_FILENO, libc::TCSANOW, &termios))?;
-    }
+    termios.c_lflag &= !(ECHO | ECHOE | ECHOK | ECHONL);
+    tcsetattr(libc::STDIN_FILENO, TCSANOW, &termios)?;
 
     let mut password = String::new();
     io::stdin().read_line(&mut password)?;
     println!();
     io::stdout().flush()?;
 
-    unsafe {
-        cvt(libc::tcsetattr(
-            libc::STDIN_FILENO,
-            libc::TCSANOW,
-            &old_termios,
-        ))?;
-    }
+    tcsetattr(libc::STDIN_FILENO, libc::TCSANOW, &old_termios)?;
 
     Ok(String::from(password.trim()))
 }
@@ -153,13 +146,9 @@ fn delay(seconds: u32) {
 
 lazy_static! {
     // save original termios settings
-    static ref INIT_TERMIOS: libc::termios = unsafe {
-        let mut t: libc::termios = mem::uninitialized();
-        if libc::tcgetattr(libc::STDIN_FILENO, &mut t) < 0 ||
-            libc::isatty(libc::STDIN_FILENO) == 0 {
-            panic!("Must be a terminal");
-        }
-        t
+    static ref INIT_TERMIOS: termios::Termios = {
+        if !isatty::stdin_isatty() { panic!("Must be a terminal"); }
+        termios::Termios::from_fd(libc::STDIN_FILENO).expect("Cannot get terminal attributes")
     };
 }
 
@@ -169,13 +158,8 @@ extern "C" fn alarm_handler(
     _ptr: *mut libc::c_void,
 ) {
     // restore original termios settings
-    unsafe {
-        let termios_ptr = Box::into_raw(Box::new(INIT_TERMIOS.clone()));
-        if libc::tcsetattr(libc::STDIN_FILENO, libc::TCSANOW, termios_ptr) == -1 {
-            libc::_exit(EXIT_FAILURE)
-        }
-        Box::from_raw(termios_ptr);
-    }
+    termios::tcsetattr(libc::STDIN_FILENO, libc::TCSANOW, &INIT_TERMIOS)
+        .expect("Cannot set terminal attributes");
     println!("\r\nLogin timed out after {} seconds\r\n", TIMEOUT);
     match io::stdout().flush() {
         Ok(_) => unsafe { libc::_exit(EXIT_SUCCESS) },
