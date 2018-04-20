@@ -301,6 +301,14 @@ fn main() {
             libc::exit(EXIT_FAILURE);
         };
 
+        // Message of the day
+        if let Ok(mut file) = File::open("/etc/motd") {
+            let mut message = String::new();
+            if let Ok(_) = file.read_to_string(&mut message) {
+                println!("{}", message);
+            }
+        }
+
         if libc::execl(
             (*passwd).pw_shell,
             (*passwd).pw_shell,
